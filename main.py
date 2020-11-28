@@ -68,4 +68,27 @@ google_research.federated.utils.training_utils.build_federated_evaluate_fn(
 ) -> Callable[[tff.learning.ModelWeights, int], Dict[str, Any]]:
 ```
 
+###test_fn
+
+- ```
+training_utils.build_centralized_evaluate_fn(
+      eval_dataset=emnist_test,
+      model_builder=model_builder,
+      loss_builder=loss_builder,
+      metrics_builder=metrics_builder)
+```
 """
+import functools
+
+from absl import app
+from absl import flags
+from absl import logging
+
+import tensorflow as tf
+import tensorflow_federated as tff
+from grfu.optimization.shared import optimizer_utils
+from grfu.utils import training_loop
+from grfu.utils import training_utils
+from grfu.utils import utils_impl
+
+# datasets need to be imported sometime
