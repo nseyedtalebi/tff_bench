@@ -86,9 +86,12 @@ from absl import logging
 
 import tensorflow as tf
 import tensorflow_federated as tff
-from grfu.optimization.shared import optimizer_utils
+from grfu.optimization import optimizer_utils
 from grfu.utils import training_loop
 from grfu.utils import training_utils
 from grfu.utils import utils_impl
 
 # datasets need to be imported sometime
+
+# TODO: Enable running sims with any available datasets, with or without DP,
+# fed or centralized. Basically combine the dp and optimizer experiments

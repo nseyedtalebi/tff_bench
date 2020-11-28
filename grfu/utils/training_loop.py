@@ -23,10 +23,9 @@ from absl import logging
 import pandas as pd
 import tensorflow as tf
 import tensorflow_federated as tff
-
-from utils import checkpoint_manager
-from utils import metrics_manager
-from utils import utils_impl
+from . import checkpoint_manager
+from . import metrics_manager
+from . import utils_impl
 from tensorboard.plugins.hparams import api as hp
 
 

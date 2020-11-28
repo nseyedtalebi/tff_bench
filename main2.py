@@ -22,12 +22,12 @@ from absl import logging
 import tensorflow as tf
 import tensorflow_federated as tff
 
-from optimization.shared import optimizer_utils
-from utils import training_loop
-from utils import training_utils
-from utils import utils_impl
-from utils.datasets import emnist_dataset
-from utils.models import emnist_models
+from grfu.optimization import optimizer_utils
+from grfu.utils import training_loop
+from grfu.utils import training_utils
+from grfu.utils import utils_impl
+from grfu.utils.datasets import emnist_dataset
+from grfu.utils.models import emnist_models
 
 with utils_impl.record_hparam_flags():
   # Experiment hyperparameters
