@@ -1,97 +1,73 @@
-"""
-everything here should help to prepare a training loop and run it like in the example scripts
-example call:
-  training_loop.run(
-      iterative_process=,
-      client_datasets_fn=,
-      validation_fn=,
-      test_fn=,
-      total_rounds=,
-      experiment_name=,
-      root_output_dir=root_output_dir,
-      **kwargs)
-
-###iterative_process:
-
-- ```
-    tff.learning.build_federated_averaging_process(
-    model_fn: Callable[[], tff.learning.Model],
-    client_optimizer_fn: Callable[[], tf.keras.optimizers.Optimizer],
-    server_optimizer_fn: Callable[[], tf.keras.optimizers.Optimizer] = DEFAULT_SERVER_OPTIMIZER_FN,
-    client_weight_fn: Callable[[Any], tf.Tensor] = None,
-    *,
-    broadcast_process: Optional[tff.templates.MeasuredProcess] = None,
-    aggregation_process: Optional[tff.templates.MeasuredProcess] = None,
-    model_update_aggregation_factory: Optional[tff.aggregators.AggregationProcessFactory] = None,
-    use_experimental_simulation_loop: bool = False
-) -> tff.templates.IterativeProcess
-```
-
-- ```tff.learning.build_federated_sgd_process(
-    model_fn: Callable[[], tff.learning.Model],
-    server_optimizer_fn: Callable[[], tf.keras.optimizers.Optimizer] = DEFAULT_SERVER_OPTIMIZER_FN,
-    client_weight_fn: Callable[[Any], tf.Tensor] = None,
-    *,
-    broadcast_process: Optional[tff.templates.MeasuredProcess] = None,
-    aggregation_process: Optional[tff.templates.MeasuredProcess] = None,
-    model_update_aggregation_factory: Optional[tff.aggregators.AggregationProcessFactory] = None,
-    use_experimental_simulation_loop: bool = False
-) -> tff.templates.IterativeProcess
-```
-
-###client_datsets
-- ```google_research.federated.utils.training_utils.build_client_datasets_fn(
-    dataset: tff.simulation.ClientData,
-    clients_per_round: int,
-    random_seed: Optional[int] = None
-) -> Callable[[int], List[tf.data.Dataset]]:
-```
-
-###validation_fn
-
-- ```
-training_utils.build_centralized_evaluate_fn(
-      eval_dataset=emnist_test,
-      model_builder=model_builder,
-      loss_builder=loss_builder,
-      metrics_builder=metrics_builder)
-```
-
-- ```
-google_research.federated.utils.training_utils.build_federated_evaluate_fn(
-    eval_dataset: tff.simulation.ClientData,
-    model_builder: Callable[[], tf.keras.Model],
-    metrics_builder: Callable[[], List[tf.keras.metrics.Metric]],
-    clients_per_round: int,
-    random_seed: Optional[int] = None,
-    quantiles: Optional[Iterable[float]] = DEFAULT_QUANTILES,
-) -> Callable[[tff.learning.ModelWeights, int], Dict[str, Any]]:
-```
-
-###test_fn
-
-- ```
-training_utils.build_centralized_evaluate_fn(
-      eval_dataset=emnist_test,
-      model_builder=model_builder,
-      loss_builder=loss_builder,
-      metrics_builder=metrics_builder)
-```
-"""
 import functools
+from typing import Callable, Optional
 
-from absl import app
 from absl import flags
 from absl import logging
-
+from absl import app
 import tensorflow as tf
 import tensorflow_federated as tff
-from grfu.optimization import optimizer_utils
+
 from grfu.utils import training_loop
 from grfu.utils import training_utils
-from grfu.utils import utils_impl
+from grfu.utils.datasets import emnist_dataset
+from grfu.utils.models import emnist_models
 
-# datasets need to be imported sometime
+from emnist_experiment import emnistExperiment
 
-# TODO: Enable running sims with any available datasets, with or without DP,
-# fed or centralized. Basically combine the dp and optimizer experiments
+emnistExperiment.define_experiment_flags()
+
+FLAGS = flags.FLAGS
+
+
+def main(argv):
+    print(FLAGS.client_optimizer)
+    emnist = emnistExperiment()
+    client_datasets_fn = None
+    validation_fn = None
+    test_fn = None
+    total_rounds = None
+    experiment_name = "emnist_1"
+    root_output_dir = "/tmp/emnist_1/"
+
+    loss_builder = tf.keras.losses.SparseCategoricalCrossentropy
+    metrics_builder = lambda: [tf.keras.metrics.SparseCategoricalAccuracy()]
+
+    def tff_model_fn() -> tff.learning.Model:
+        return tff.learning.from_keras_model(
+            keras_model=model_builder(),
+            input_spec=input_spec,
+            loss=loss_builder(),
+            metrics=metrics_builder(),
+        )
+
+    training_process = emnist.get_iterative_process()
+
+    client_datasets_fn = training_utils.build_client_datasets_fn(
+        dataset=emnist_train,
+        clients_per_round=clients_per_round,
+        random_seed=client_datasets_random_seed,
+    )
+
+    evaluate_fn = training_utils.build_centralized_evaluate_fn(
+        eval_dataset=emnist_test,
+        model_builder=model_builder,
+        loss_builder=loss_builder,
+        metrics_builder=metrics_builder,
+    )
+
+    logging.info("Training model:")
+    logging.info(model_builder().summary())
+    training_loop.run(
+        iterative_process=training_process,
+        client_datasets_fn=client_datasets_fn,
+        validation_fn=evaluate_fn,
+        test_fn=evaluate_fn,
+        total_rounds=total_rounds,
+        experiment_name=experiment_name,
+        root_output_dir=root_output_dir,
+        **kwargs
+    )
+
+
+if __name__ == "__main__":
+    app.run(main)
