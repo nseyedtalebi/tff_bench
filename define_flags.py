@@ -10,7 +10,9 @@ def define_dp_flags():
         # Differential privacy flags
         flags.DEFINE_float("clip", 0.05, "Initial clip.")
         flags.DEFINE_float(
-            "noise_multiplier", None, "Noise multiplier. If None, no DP is used."
+            "noise_multiplier",
+            None,
+            "Noise multiplier. Set to a float > 1 to enable DP",
         )
         flags.DEFINE_float(
             "adaptive_clip_learning_rate", 0, "Adaptive clip learning rate."
