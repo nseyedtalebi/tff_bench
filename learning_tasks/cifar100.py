@@ -19,7 +19,7 @@ class Cifar100:#eventually, this will derive from an abstract class mb
     NUM_CLASSES = 100
     crop_shape = (FLAGS.cifar100_crop_size, FLAGS.cifar100_crop_size, 3)
 
-    def __init__(addl_metrics=[]):
+    def __init__(self, addl_metrics=[]):
         self._train_data = None
         self._test_data = None
         self._input_spec = None
@@ -42,7 +42,7 @@ class Cifar100:#eventually, this will derive from an abstract class mb
         return self._cifar_train
 
     @property
-    def test_data() -> tf.data.Datset:
+    def test_data():
         if not self._cifar_test:
             _, cifar_test = cifar100_dataset.get_centralized_datasets(
                 train_batch_size=FLAGS.client_batch_size,
