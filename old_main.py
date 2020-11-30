@@ -1,39 +1,42 @@
-import functools
-from typing import Callable, Optional
+"""
+Runs federated training on various tasks using a generalized form of FedAvg.
 
-from absl import flags
-from absl import logging
+Specifically, we create (according to flags) an iterative processes that allows
+for client and server learning rate schedules, as well as various client and
+server optimization methods. For more details on the learning rate scheduling
+and optimization methods, see `shared/optimizer_utils.py`. For details on the
+iterative process, see `shared/fed_avg_schedule.py`.
+"""
+
+import collections
+from typing import Any, Callable, Optional
+
 from absl import app
+from absl import flags
 import tensorflow as tf
 import tensorflow_federated as tff
 
-from grfu.utils import training_loop
-from grfu.utils import training_utils
-from grfu.utils.datasets import emnist_dataset
-from grfu.utils.models import emnist_models
+from grfu.utils import utils_impl
+import grfu.utils.training_loop as training_loop
+from grfu.optimization import fed_avg_schedule
+from grfu.optimization import optimizer_utils
+
+import define_flags
 
 FLAGS = flags.FLAGS
 
 
 def main(argv):
+    if len(argv) > 1:
+        raise app.UsageError(
+            "Expected no command-line arguments, " "got: {}".format(argv)
+        )
+    from build_experiment import get_training_loop_kwargs
 
-    # TODO: choose training_process based on args, same for other args to training_loop.run
-    # for example: training_process = iterative_process_builder(tff_model_fn)
-
-    logging.info("Training model:")
-    logging.info(model_builder().summary())
-
-    #
-    training_loop.run(
-        iterative_process=training_process,
-        client_datasets_fn=client_datasets_fn,
-        validation_fn=evaluate_fn,
-        test_fn=evaluate_fn,
-        total_rounds=total_rounds,
-        experiment_name=experiment_name,
-        root_output_dir=root_output_dir,
-        **kwargs
-    )
+    model_kwargs = get_training_loop_kwargs()
+    training_loop_flags = lookup_flag_values(training_loop_flags)
+    training_loop_kwargs = {**model_kwargs, **training_loop_flags}
+    training_loop.run(**training_loop_kwargs)
 
 
 if __name__ == "__main__":
