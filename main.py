@@ -230,6 +230,7 @@ def _get_hparam_flags():
     opt_flag_dict = optimizer_utils.remove_unused_flags("client", opt_flag_dict)
     opt_flag_dict = optimizer_utils.remove_unused_flags("server", opt_flag_dict)
     hparam_dict.update(opt_flag_dict)
+    hparam_dict.update(utils_impl.lookup_flag_values(dp_flags))
 
     # Update with task-specific flags.
     task_name = FLAGS.task

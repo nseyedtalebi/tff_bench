@@ -37,6 +37,7 @@ def build_federated_process(
                 "Differential privacy is only implemented for uniform weighting."
             )
         aggregation_process = build_dp_aggregate_process(model_fn)
+        print("Build dp_aggregate_process")
     else:
         aggregation_process = None
 
