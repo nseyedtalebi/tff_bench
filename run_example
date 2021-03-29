@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 
-python main.py --task=cifar100 --total_rounds=100 \
---client_optimizer=sgd --client_learning_rate=0.1 --client_batch_size=20 \
---server_optimizer=sgd --server_learning_rate=1.0 --clients_per_round=10 \
---client_epochs_per_round=1 --experiment_name=cifar100_no_dp
+source ./hparams.bash
+
+param_names=$(echo $CROSS_TASK_HPARAMS | tr " " "\n")
+for param in "${!param_names[@]}" #
+do
+	echo "${param_names[$param]}"
+done
+echo $CTHP
+#python main.py --task=cifar100 --experiment_name=test --server_optimizer=yogi 
+#--total_rounds=4000 \
+#--client_optimizer=sgd --client_learning_rate=-1 --client_batch_size=20 \
+#--server_optimizer=sgd --server_learning_rate=1.0 --clients_per_round=10 \
+#--client_epochs_per_round=1 --experiment_name=cifar100_no_dp
 #\
 #--clip=0.05 --noise_multiplier=1.5 --adaptive_clip_learning_rate=0 \
 #--target_unclipped_quantile=0.5 --clipped_count_budget_allocation=0.1

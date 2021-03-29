@@ -61,7 +61,7 @@ def build_federated_process(
         model_fn,
         client_optimizer_fn,
         server_optimizer_fn,
-        client_weight_fn,
+        client_weighting=client_weight_fn,
         broadcast_process=None,
         aggregation_process=aggregation_process,
         model_update_aggregation_factory=None,
