@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Cross-task hyperparameters
-export CROSS_TASK_HPARAMS="clients_per_round client_epochs client_datasets_seed total_rounds client_batch_size"
-export CIFAR_100="10 1 1 4000 20"
+export CROSS_TASK_HPARAMS=("clients_per_round" "client_epochs" "client_datasets_seed" "total_rounds" "client_batch_size")
+export CIFAR_100=(10 1 1 4000 20)
 export EMNIST_AE="10 1 1 3000 20"
 export EMNIST_CR="10 1 1 1500 20"
 export SHAKESPEARE="10 1 1 1200 4"

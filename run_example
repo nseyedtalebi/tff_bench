@@ -2,17 +2,30 @@
 
 source ./hparams.bash
 
-param_names=$(echo $CROSS_TASK_HPARAMS | tr " " "\n")
-for param in "${!param_names[@]}" #
-do
-	echo "${param_names[$param]}"
-done
-echo $CTHP
-#python main.py --task=cifar100 --experiment_name=test --server_optimizer=yogi 
-#--total_rounds=4000 \
-#--client_optimizer=sgd --client_learning_rate=-1 --client_batch_size=20 \
-#--server_optimizer=sgd --server_learning_rate=1.0 --clients_per_round=10 \
-#--client_epochs_per_round=1 --experiment_name=cifar100_no_dp
+#params=$(
+#	for index in "${!CROSS_TASK_HPARAMS[@]}"
+#	do
+#		echo "--${CROSS_TASK_HPARAMS[$index]}=${CIFAR_100[$index]}"
+#	done
+#)
+#params+=("--task=cifar100" "--experiment_name=test" "--server_optimizer=yogi")
+
+python main.py --task=cifar100 \
+--experiment_name=test \
+--server_optimizer=yogi \
+--server_learning_rate=0 \
+--clients_per_round=10 \
+--client_epochs_per_round=1 \
+--client_datasets_random_seed=1 \
+--total_rounds=4000 \
+--client_optimizer=sgd \
+--client_learning_rate=-1.5 \
+--client_batch_size=20 \
+--cifar100_crop_size=24 \
+--server_yogi_epsilon=-1 \
+--server_yogi_initial_accumulator_value=0.0
+
+#--experiment_name=cifar100_no_dp
 #\
 #--clip=0.05 --noise_multiplier=1.5 --adaptive_clip_learning_rate=0 \
 #--target_unclipped_quantile=0.5 --clipped_count_budget_allocation=0.1
