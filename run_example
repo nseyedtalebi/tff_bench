@@ -11,18 +11,18 @@ source ./hparams.bash
 #params+=("--task=cifar100" "--experiment_name=test" "--server_optimizer=yogi")
 
 python main.py --task=cifar100 \
---experiment_name=test \
+--experiment_name=test_2 \
 --server_optimizer=yogi \
---server_learning_rate=0 \
+--server_learning_rate=1 \
 --clients_per_round=10 \
 --client_epochs_per_round=1 \
 --client_datasets_random_seed=1 \
 --total_rounds=4000 \
 --client_optimizer=sgd \
---client_learning_rate=-1.5 \
+--client_learning_rate=0.03162 \
 --client_batch_size=20 \
 --cifar100_crop_size=24 \
---server_yogi_epsilon=-1 \
+--server_yogi_epsilon=0.1 \
 --server_yogi_initial_accumulator_value=0.0
 
 #--experiment_name=cifar100_no_dp
