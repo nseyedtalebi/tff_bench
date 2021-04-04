@@ -22,8 +22,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         "//optimization/shared:keras_metrics",
-        "//utils:training_loop",
-        "//utils:training_utils",
+        "//optimization/shared:training_specs",
         "//utils/datasets:shakespeare_dataset",
         "//utils/models:shakespeare_models",
     ],

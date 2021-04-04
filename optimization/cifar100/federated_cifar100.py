@@ -14,151 +14,99 @@
 """Federated CIFAR-100 classification library using TFF."""
 
 import functools
-from typing import Callable, Optional
 
-from absl import logging
 import tensorflow as tf
 import tensorflow_federated as tff
 
-from utils import training_loop
-from utils import training_utils
+from optimization.shared import training_specs
 from utils.datasets import cifar100_dataset
 from utils.models import resnet_models
-from ..shared.keras_metrics import NumBatchesCounter, NumExamplesCounter
 
 CIFAR_SHAPE = (32, 32, 3)
 NUM_CLASSES = 100
 
 
-def run_federated(
-    iterative_process_builder: Callable[..., tff.templates.IterativeProcess],
-    client_epochs_per_round: int,
-    client_batch_size: int,
-    clients_per_round: int,
-    max_batches_per_client: Optional[int] = -1,
-    client_datasets_random_seed: Optional[int] = None,
-    crop_size: Optional[int] = 24,
-    total_rounds: Optional[int] = 1500,
-    experiment_name: Optional[str] = "federated_cifar100",
-    root_output_dir: Optional[str] = "/tmp/fed_opt",
-    max_eval_batches: Optional[int] = None,
-    dp_enabled=True,
-    **kwargs
-):
-    """Runs an iterative process on the CIFAR-100 classification task.
+def configure_training(
+    task_spec: training_specs.TaskSpec,
+    crop_size: int = 24,
+    distort_train_images: bool = True) -> training_specs.RunnerSpec:
+  """Configures training for the CIFAR-100 classification task.
 
-    This method will load and pre-process dataset and construct a model used for
-    the task. It then uses `iterative_process_builder` to create an iterative
-    process that it applies to the task, using
-    `federated_research.utils.training_loop`.
+  This method will load and pre-process datasets and construct a model used for
+  the task. It then uses `iterative_process_builder` to create an iterative
+  process compatible with `federated_research.utils.training_loop`.
 
-    We assume that the iterative process has the following functional type
-    signatures:
+  Args:
+    task_spec: A `TaskSpec` class for creating federated training tasks.
+    crop_size: An optional integer representing the resulting size of input
+      images after preprocessing.
+    distort_train_images: A boolean indicating whether to distort training
+      images during preprocessing via random crops, as opposed to simply
+      resizing the image.
 
-      *   `initialize`: `( -> S@SERVER)` where `S` represents the server state.
-      *   `next`: `<S@SERVER, {B*}@CLIENTS> -> <S@SERVER, T@SERVER>` where `S`
-          represents the server state, `{B*}` represents the client datasets,
-          and `T` represents a python `Mapping` object.
+  Returns:
+    A `RunnerSpec` containing attributes used for running the newly created
+    federated task.
+  """
+  crop_shape = (crop_size, crop_size, 3)
 
-    Moreover, the server state must have an attribute `model` of type
-    `tff.learning.ModelWeights`.
+  cifar_train, _ = tff.simulation.datasets.cifar100.load_data()
+  _, cifar_test = cifar100_dataset.get_centralized_datasets(
+      train_batch_size=task_spec.client_batch_size, crop_shape=crop_shape)
 
-    Args:
-      iterative_process_builder: A function that accepts a no-arg `model_fn`, and
-        returns a `tff.templates.IterativeProcess`. The `model_fn` must return a
-        `tff.learning.Model`.
-      client_epochs_per_round: An integer representing the number of epochs of
-        training performed per client in each training round.
-      client_batch_size: An integer representing the batch size used on clients.
-      clients_per_round: An integer representing the number of clients
-        participating in each round.
-      max_batches_per_client: An optional int specifying the number of batches
-        taken by each client at each round. If `-1`, the entire client dataset is
-        used.
-      client_datasets_random_seed: An optional int used to seed which clients are
-        sampled at each round. If `None`, no seed is used.
-      crop_size: An optional integer representing the resulting size of input
-        images after preprocessing.
-      total_rounds: The number of federated training rounds.
-      experiment_name: The name of the experiment being run. This will be appended
-        to the `root_output_dir` for purposes of writing outputs.
-      root_output_dir: The name of the root output directory for writing
-        experiment outputs.
-      max_eval_batches: If set to a positive integer, evaluation datasets are
-        capped to at most that many batches. If set to None or a nonpositive
-        integer, the full evaluation datasets are used.
-      **kwargs: Additional arguments configuring the training loop. For details
-        on supported arguments, see
-        `federated_research/utils/training_utils.py`.
-    """
+  train_preprocess_fn = cifar100_dataset.create_preprocess_fn(
+      num_epochs=task_spec.client_epochs_per_round,
+      batch_size=task_spec.client_batch_size,
+      crop_shape=crop_shape,
+      distort_image=distort_train_images)
+  input_spec = train_preprocess_fn.type_signature.result.element
 
-    crop_shape = (crop_size, crop_size, 3)
+  model_builder = functools.partial(
+      resnet_models.create_resnet18,
+      input_shape=crop_shape,
+      num_classes=NUM_CLASSES)
 
-    cifar_train, _ = cifar100_dataset.get_federated_cifar100(
-        client_epochs_per_round=client_epochs_per_round,
-        train_batch_size=client_batch_size,
-        crop_shape=crop_shape,
-        max_batches_per_client=max_batches_per_client,
-    )
+  loss_builder = tf.keras.losses.SparseCategoricalCrossentropy
+  metrics_builder = lambda: [tf.keras.metrics.SparseCategoricalAccuracy()]
 
-    _, cifar_test = cifar100_dataset.get_centralized_datasets(
-        train_batch_size=client_batch_size,
-        max_test_batches=max_eval_batches,
-        crop_shape=crop_shape,
-    )
+  def tff_model_fn() -> tff.learning.Model:
+    return tff.learning.from_keras_model(
+        keras_model=model_builder(),
+        input_spec=input_spec,
+        loss=loss_builder(),
+        metrics=metrics_builder())
 
-    input_spec = cifar_train.create_tf_dataset_for_client(
-        cifar_train.client_ids[0]
-    ).element_spec
+  iterative_process = task_spec.iterative_process_builder(tff_model_fn)
 
-    model_builder = functools.partial(
-        resnet_models.create_resnet18, input_shape=crop_shape, num_classes=NUM_CLASSES
-    )
+  @tff.tf_computation(tf.string)
+  def build_train_dataset_from_client_id(client_id):
+    client_dataset = cifar_train.dataset_computation(client_id)
+    return train_preprocess_fn(client_dataset)
 
-    loss_builder = tf.keras.losses.SparseCategoricalCrossentropy
+  training_process = tff.simulation.compose_dataset_computation_with_iterative_process(
+      build_train_dataset_from_client_id, iterative_process)
+  client_ids_fn = tff.simulation.build_uniform_sampling_fn(
+      cifar_train.client_ids,
+      size=task_spec.clients_per_round,
+      replace=False,
+      random_seed=task_spec.client_datasets_random_seed)
+  # We convert the output to a list (instead of an np.ndarray) so that it can
+  # be used as input to the iterative process.
+  client_sampling_fn = lambda x: list(client_ids_fn(x))
 
-    def metrics_builder():
-        if dp_enabled:
-            # 500000 total examples in traning set according to tff docs
-            return [
-                NumBatchesCounter("num_batches"),
-                NumExamplesCounter("num_examples"),
-                tf.keras.metrics.SparseCategoricalAccuracy(),
-            ]
+  training_process.get_model_weights = iterative_process.get_model_weights
 
-    def tff_model_fn() -> tff.learning.Model:
-        return tff.learning.from_keras_model(
-            keras_model=model_builder(),
-            input_spec=input_spec,
-            loss=loss_builder(),
-            metrics=metrics_builder(),
-        )
+  evaluate_fn = tff.learning.build_federated_evaluation(tff_model_fn)
 
-    training_process = iterative_process_builder(tff_model_fn)
+  def test_fn(state):
+    return evaluate_fn(iterative_process.get_model_weights(state), [cifar_test])
 
-    client_datasets_fn = training_utils.build_client_datasets_fn(
-        dataset=cifar_train,
-        clients_per_round=clients_per_round,
-        random_seed=client_datasets_random_seed,
-    )
+  def validation_fn(state, round_num):
+    del round_num
+    return evaluate_fn(iterative_process.get_model_weights(state), [cifar_test])
 
-    evaluate_fn = training_utils.build_centralized_evaluate_fn(
-        eval_dataset=cifar_test,
-        model_builder=model_builder,
-        loss_builder=loss_builder,
-        metrics_builder=metrics_builder,
-    )
-
-    logging.info("Training model:")
-    logging.info(model_builder().summary())
-
-    training_loop.run(
-        iterative_process=training_process,
-        client_datasets_fn=client_datasets_fn,
-        validation_fn=evaluate_fn,
-        test_fn=evaluate_fn,
-        total_rounds=total_rounds,
-        experiment_name=experiment_name,
-        root_output_dir=root_output_dir,
-        **kwargs
-    )
+  return training_specs.RunnerSpec(
+      iterative_process=training_process,
+      client_datasets_fn=client_sampling_fn,
+      validation_fn=validation_fn,
+      test_fn=test_fn)

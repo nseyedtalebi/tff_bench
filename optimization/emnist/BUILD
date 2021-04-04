@@ -20,8 +20,7 @@ py_library(
     srcs = ["federated_emnist.py"],
     srcs_version = "PY3",
     deps = [
-        "//utils:training_loop",
-        "//utils:training_utils",
+        "//optimization/shared:training_specs",
         "//utils/datasets:emnist_dataset",
         "//utils/models:emnist_models",
     ],

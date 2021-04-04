@@ -20,8 +20,6 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_federated as tff
 
-from utils import checkpoint_manager
-from utils import metrics_manager
 from utils import training_loop
 
 _Batch = collections.namedtuple('Batch', ['x', 'y'])
@@ -56,7 +54,7 @@ def _create_input_spec():
       y=tf.TensorSpec(dtype=tf.int64, shape=[None, 1]))
 
 
-class ExperimentRunnerTest(tf.test.TestCase):
+class TrainingLoopArgumentsTest(tf.test.TestCase):
 
   def test_raises_non_iterative_process(self):
     bad_iterative_process = _build_federated_averaging_process().next
@@ -66,8 +64,8 @@ class ExperimentRunnerTest(tf.test.TestCase):
       del round_num
       return federated_data
 
-    def validation_fn(model):
-      del model
+    def validation_fn(state, round_num):
+      del state, round_num
       return {}
 
     root_output_dir = self.get_temp_dir()
@@ -84,8 +82,8 @@ class ExperimentRunnerTest(tf.test.TestCase):
     iterative_process = _build_federated_averaging_process()
     client_dataset = [[_batch_fn()]]
 
-    def validation_fn(model):
-      del model
+    def validation_fn(state, round_num):
+      del state, round_num
       return {}
 
     root_output_dir = self.get_temp_dir()
@@ -125,8 +123,8 @@ class ExperimentRunnerTest(tf.test.TestCase):
       del round_num
       return federated_data
 
-    def validation_fn(model):
-      del model
+    def validation_fn(state, round_num):
+      del state, round_num
       return {}
 
     with self.assertRaises(TypeError):
@@ -138,39 +136,8 @@ class ExperimentRunnerTest(tf.test.TestCase):
           experiment_name='non_str_output_dir',
           root_output_dir=1)
 
-  def test_raises_no_model_attribute_in_state(self):
 
-    class BadIterativeProcess(tff.templates.IterativeProcess):
-      """Converts iterative process results from anonymous tuples."""
-
-      def __init__(self):
-        pass
-
-      def initialize(self):
-        return {}
-
-      def next(self, state, data):
-        return {}
-
-    iterative_process = BadIterativeProcess()
-    federated_data = [[_batch_fn()]]
-
-    def client_datasets_fn(round_num):
-      del round_num
-      return federated_data
-
-    def validation_fn(model):
-      del model
-      return {}
-
-    with self.assertRaisesRegex(TypeError,
-                                'The server state must have a model attribute'):
-      training_loop.run(
-          iterative_process=iterative_process,
-          client_datasets_fn=client_datasets_fn,
-          validation_fn=validation_fn,
-          total_rounds=10,
-          experiment_name='bad_iterative_process')
+class ExperimentRunnerTest(tf.test.TestCase):
 
   def test_fedavg_training_decreases_loss(self):
     batch = _batch_fn()
@@ -181,7 +148,9 @@ class ExperimentRunnerTest(tf.test.TestCase):
       del round_num
       return federated_data
 
-    def validation_fn(model):
+    def validation_fn(state, round_num):
+      model = state.model
+      del round_num
       keras_model = tff.simulation.models.mnist.create_keras_model(
           compile_model=True)
       model.assign_weights_to(keras_model)
@@ -198,8 +167,8 @@ class ExperimentRunnerTest(tf.test.TestCase):
         experiment_name='fedavg_decreases_loss',
         root_output_dir=root_output_dir)
     self.assertLess(
-        validation_fn(final_state.model)['loss'],
-        validation_fn(initial_state.model)['loss'])
+        validation_fn(final_state, 0)['loss'],
+        validation_fn(initial_state, 0)['loss'])
 
   def test_checkpoint_manager_saves_state(self):
     experiment_name = 'checkpoint_manager_saves_state'
@@ -210,8 +179,8 @@ class ExperimentRunnerTest(tf.test.TestCase):
       del round_num
       return federated_data
 
-    def validation_fn(model):
-      del model
+    def validation_fn(state, round_num):
+      del state, round_num
       return {}
 
     root_output_dir = self.get_temp_dir()
@@ -222,8 +191,9 @@ class ExperimentRunnerTest(tf.test.TestCase):
         total_rounds=1,
         experiment_name=experiment_name,
         root_output_dir=root_output_dir)
+    final_model = final_state.model
 
-    ckpt_manager = checkpoint_manager.FileCheckpointManager(
+    ckpt_manager = tff.simulation.FileCheckpointManager(
         os.path.join(root_output_dir, 'checkpoints', experiment_name))
     restored_state, restored_round = ckpt_manager.load_latest_checkpoint(
         final_state)
@@ -232,10 +202,13 @@ class ExperimentRunnerTest(tf.test.TestCase):
 
     keras_model = tff.simulation.models.mnist.create_keras_model(
         compile_model=True)
-    restored_state.model.assign_weights_to(keras_model)
+    restored_model = restored_state.model
+
+    restored_model.assign_weights_to(keras_model)
     restored_loss = keras_model.test_on_batch(federated_data[0][0].x,
                                               federated_data[0][0].y)
-    final_state.model.assign_weights_to(keras_model)
+
+    final_model.assign_weights_to(keras_model)
     final_loss = keras_model.test_on_batch(federated_data[0][0].x,
                                            federated_data[0][0].y)
     self.assertEqual(final_loss, restored_loss)
@@ -250,30 +223,73 @@ class ExperimentRunnerTest(tf.test.TestCase):
       del round_num
       return federated_data
 
-    def evaluate(model):
+    def test_fn(state):
+      model = state.model
       keras_model = tff.simulation.models.mnist.create_keras_model(
           compile_model=True)
       model.assign_weights_to(keras_model)
       return {'loss': keras_model.evaluate(batch.x, batch.y)}
 
+    def validation_fn(state, round_num):
+      del state, round_num
+      return {}
+
     root_output_dir = self.get_temp_dir()
     training_loop.run(
         iterative_process=iterative_process,
         client_datasets_fn=client_datasets_fn,
-        validation_fn=evaluate,
+        validation_fn=validation_fn,
         total_rounds=1,
         experiment_name=experiment_name,
         root_output_dir=root_output_dir,
         rounds_per_eval=10,
-        test_fn=evaluate)
+        test_fn=test_fn)
 
-    results_dir = os.path.join(root_output_dir, 'results', experiment_name)
-
-    scalar_manager = metrics_manager.ScalarMetricsManager(results_dir)
-    fieldnames, metrics = scalar_manager.get_metrics()
+    csv_file = os.path.join(root_output_dir, 'results', experiment_name,
+                            'experiment.metrics.csv')
+    metrics_manager = tff.simulation.CSVMetricsManager(csv_file)
+    fieldnames, metrics = metrics_manager.get_metrics()
     self.assertLen(metrics, 2)
-    self.assertIn('eval/loss', fieldnames)
     self.assertIn('test/loss', fieldnames)
+
+  def test_training_loop_works_on_restart(self):
+    experiment_name = 'test_metrics'
+    iterative_process = _build_federated_averaging_process()
+    batch = _batch_fn()
+    federated_data = [[batch]]
+
+    def client_datasets_fn(round_num):
+      del round_num
+      return federated_data
+
+    def validation_fn(state, round_num):
+      del state, round_num
+      return {}
+
+    root_output_dir = self.get_temp_dir()
+    training_loop.run(
+        iterative_process=iterative_process,
+        client_datasets_fn=client_datasets_fn,
+        validation_fn=validation_fn,
+        total_rounds=2,
+        experiment_name=experiment_name,
+        root_output_dir=root_output_dir)
+
+    training_loop.run(
+        iterative_process=iterative_process,
+        client_datasets_fn=client_datasets_fn,
+        validation_fn=validation_fn,
+        total_rounds=4,
+        experiment_name=experiment_name,
+        root_output_dir=root_output_dir)
+
+    csv_file = os.path.join(root_output_dir, 'results', experiment_name,
+                            'experiment.metrics.csv')
+    metrics_manager = tff.simulation.CSVMetricsManager(csv_file)
+    _, metrics = metrics_manager.get_metrics()
+    # Test that 4 rounds of metrics are logged (the CSV length adds one for
+    # the header).
+    self.assertLen(metrics, 5)
 
 
 if __name__ == '__main__':

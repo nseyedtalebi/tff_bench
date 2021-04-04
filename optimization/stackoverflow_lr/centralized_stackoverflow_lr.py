@@ -18,7 +18,7 @@ from typing import Any, Mapping, Optional
 import tensorflow as tf
 
 from utils import centralized_training_loop
-from utils.datasets import stackoverflow_lr_dataset
+from utils.datasets import stackoverflow_tag_prediction
 from utils.models import stackoverflow_lr_models
 
 
@@ -61,14 +61,16 @@ def run_centralized(optimizer: tf.keras.optimizers.Optimizer,
       datasets are used.
   """
 
-  train_dataset, validation_dataset, test_dataset = stackoverflow_lr_dataset.get_centralized_datasets(
+  train_dataset, validation_dataset, test_dataset = stackoverflow_tag_prediction.get_centralized_datasets(
       train_batch_size=batch_size,
-      max_train_batches=max_batches,
-      max_validation_batches=max_batches,
-      max_test_batches=max_batches,
-      vocab_tokens_size=vocab_tokens_size,
-      vocab_tags_size=vocab_tags_size,
+      word_vocab_size=vocab_tokens_size,
+      tag_vocab_size=vocab_tags_size,
       num_validation_examples=num_validation_examples)
+
+  if max_batches and max_batches >= 1:
+    train_dataset = train_dataset.take(max_batches)
+    validation_dataset = validation_dataset.take(max_batches)
+    test_dataset = test_dataset.take(max_batches)
 
   model = stackoverflow_lr_models.create_logistic_model(
       vocab_tokens_size=vocab_tokens_size, vocab_tags_size=vocab_tags_size)

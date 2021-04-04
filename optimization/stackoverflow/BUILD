@@ -11,7 +11,7 @@ py_library(
     deps = [
         "//optimization/shared:keras_metrics",
         "//utils:centralized_training_loop",
-        "//utils/datasets:stackoverflow_dataset",
+        "//utils/datasets:stackoverflow_word_prediction",
         "//utils/models:stackoverflow_models",
     ],
 )
@@ -22,9 +22,8 @@ py_library(
     srcs_version = "PY3",
     deps = [
         "//optimization/shared:keras_metrics",
-        "//utils:training_loop",
-        "//utils:training_utils",
-        "//utils/datasets:stackoverflow_dataset",
+        "//optimization/shared:training_specs",
+        "//utils/datasets:stackoverflow_word_prediction",
         "//utils/models:stackoverflow_models",
     ],
 )

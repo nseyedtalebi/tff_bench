@@ -286,26 +286,32 @@ def main(argv):
     task_args = _get_task_args()
     hparam_dict = _get_hparam_flags()
 
-    if FLAGS.task == "cifar100":
-        run_federated_fn = federated_cifar100.run_federated
-    elif FLAGS.task == "emnist_cr":
-        run_federated_fn = federated_emnist.run_federated
-    elif FLAGS.task == "emnist_ae":
-        run_federated_fn = federated_emnist_ae.run_federated
-    elif FLAGS.task == "shakespeare":
-        run_federated_fn = federated_shakespeare.run_federated
-    elif FLAGS.task == "stackoverflow_nwp":
-        run_federated_fn = federated_stackoverflow.run_federated
-    elif FLAGS.task == "stackoverflow_lr":
-        run_federated_fn = federated_stackoverflow_lr.run_federated
-    else:
-        raise ValueError(
-            "--task flag {} is not supported, must be one of {}.".format(
-                FLAGS.task, _SUPPORTED_TASKS
-            )
-        )
+    task_spec = training_specs.TaskSpec(
+      iterative_process_builder=iterative_process_builder,
+      client_epochs_per_round=FLAGS.client_epochs_per_round,
+      client_batch_size=FLAGS.client_batch_size,
+      clients_per_round=FLAGS.clients_per_round,
+      client_datasets_random_seed=FLAGS.client_datasets_random_seed)
+    
+  if FLAGS.task == 'cifar100':
+    runner_spec = federated_cifar100.configure_training(task_spec)
+  elif FLAGS.task == 'emnist_cr':
+    runner_spec = federated_emnist.configure_training(task_spec)
+  elif FLAGS.task == 'emnist_ae':
+    runner_spec = federated_emnist_ae.configure_training(task_spec)
+  elif FLAGS.task == 'shakespeare':
+    runner_spec = federated_shakespeare.configure_training(task_spec)
+  elif FLAGS.task == 'stackoverflow_nwp':
+    runner_spec = federated_stackoverflow.configure_training(task_spec)
+  elif FLAGS.task == 'stackoverflow_lr':
+    runner_spec = federated_stackoverflow_lr.configure_training(task_spec)
+  else:
+    raise ValueError(
+        '--task flag {} is not supported, must be one of {}.'.format(
+            FLAGS.task, _SUPPORTED_TASKS))
 
-    run_federated_fn(**shared_args, **task_args, hparam_dict=hparam_dict)
+  _write_hparam_flags()
+
 
 
 if __name__ == "__main__":

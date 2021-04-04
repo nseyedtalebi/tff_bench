@@ -23,13 +23,21 @@ import os.path
 import shutil
 import subprocess
 import tempfile
-from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Union
 
 from absl import flags
 from absl import logging
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+
+
+def create_directory_if_not_exists(path: str):
+  """Creates a directory if it does not already exist."""
+  try:
+    tf.io.gfile.makedirs(path)
+  except tf.errors.OpError:
+    logging.info('Skipping creation of directory [%s], already exists', path)
 
 
 def iter_grid(
@@ -67,9 +75,16 @@ def atomic_write_to_csv(dataframe: pd.DataFrame,
     dataframe: A `pandas.Dataframe`.
     output_file: The final output file to write. The output will be compressed
       depending on the filename, see documentation for
-      pandas.DateFrame.to_csv(compression='infer').
-    overwrite: Whether to overwrite output_file if it exists.
+      `pandas.DateFrame.to_csv(compression='infer')`.
+    overwrite: Whether to overwrite `output_file` if it exists.
+
+  Raises:
+    ValueError: If `dataframe` is not an instance of `pandas.DataFrame`.
   """
+  if not isinstance(dataframe, pd.DataFrame):
+    raise ValueError(
+        'dataframe must be an instance of `pandas.DataFrame`, received a `{}`'
+        .format(type(dataframe)))
   # Exporting via to_hdf() is an appealing option, because we could perhaps
   # maintain more type information, and also write both hyperparameters and
   # results to the same HDF5 file. However, to_hdf() call uses pickle under the
@@ -102,6 +117,30 @@ def atomic_write_to_csv(dataframe: pd.DataFrame,
   shutil.rmtree(tmp_dir)
 
 
+def atomic_write_series_to_csv(series_data: Any,
+                               output_file: str,
+                               overwrite: bool = True) -> None:
+  """Writes series data to `output_file` as a (possibly zipped) CSV file.
+
+  The series data will be written to a CSV with two columns, an unlabeled
+  column with the indices of `series_data` (the keys if it is a `dict`), and a
+  column with label `0` containing the associated values in `series_data`. Note
+  that if `series_data` has non-scalar values, these will be written via their
+  string representation.
+
+  Args:
+    series_data: A structure that can be converted to a `pandas.Series`,
+      typically an array-like, iterable, dictionary, or scalar value. For more
+      details, see documentation for `pandas.Series`.
+    output_file: The final output file to write. The output will be compressed
+      depending on the filename, see documentation for
+      `pandas.DateFrame.to_csv(compression='infer')`.
+    overwrite: Whether to overwrite `output_file` if it exists.
+  """
+  dataframe = pd.DataFrame(pd.Series(series_data))
+  atomic_write_to_csv(dataframe, output_file, overwrite)
+
+
 def atomic_read_from_csv(csv_file):
   """Reads a `pandas.DataFrame` from the (possibly zipped) `csv_file`.
 
@@ -113,9 +152,15 @@ def atomic_read_from_csv(csv_file):
   Returns:
     A `pandas.Dataframe`.
   """
+  if csv_file.endswith('.bz2'):
+    file_open_mode = 'rb'
+    compression = 'bz2'
+  else:
+    file_open_mode = 'r'
+    compression = None
   return pd.read_csv(
-      tf.io.gfile.GFile(csv_file, mode='rb'),
-      compression='bz2' if csv_file.endswith('.bz2') else None,
+      tf.io.gfile.GFile(csv_file, mode=file_open_mode),
+      compression=compression,
       engine='c',
       index_col=0)
 
@@ -261,9 +306,9 @@ def create_optimizer_from_flags(
     A `tf.keras.optimizers.Optimizer`.
   """
   if overrides is not None:
-    if not isinstance(overrides, collections.Mapping):
+    if not isinstance(overrides, collections.abc.Mapping):
       raise TypeError(
-          '`overrides` must be a value of type `collections.Mapping`, '
+          '`overrides` must be a value of type `collections.abc.Mapping`, '
           'found type: {!s}'.format(type(overrides)))
   else:
     overrides = {}

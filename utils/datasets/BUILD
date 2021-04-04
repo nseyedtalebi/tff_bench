@@ -5,14 +5,15 @@ package(default_visibility = ["//visibility:public"])
 licenses(["notice"])
 
 py_library(
-    name = "cifar100_dataset",
-    srcs = ["cifar100_dataset.py"],
+    name = "cifar10_dataset",
+    srcs = ["cifar10_dataset.py"],
     srcs_version = "PY3",
 )
 
 py_test(
-    name = "cifar100_dataset_test",
-    srcs = ["cifar100_dataset_test.py"],
+    name = "cifar10_dataset_test",
+    size = "large",
+    srcs = ["cifar10_dataset_test.py"],
     python_version = "PY3",
     srcs_version = "PY3",
     tags = [
@@ -20,6 +21,21 @@ py_test(
         "nokokoro",
         "nopresubmit",
     ],
+    deps = [":cifar10_dataset"],
+)
+
+py_library(
+    name = "cifar100_dataset",
+    srcs = ["cifar100_dataset.py"],
+    srcs_version = "PY3",
+)
+
+py_test(
+    name = "cifar100_dataset_test",
+    size = "medium",
+    srcs = ["cifar100_dataset_test.py"],
+    python_version = "PY3",
+    srcs_version = "PY3",
     deps = [":cifar100_dataset"],
 )
 
@@ -31,34 +47,11 @@ py_library(
 
 py_test(
     name = "emnist_dataset_test",
+    size = "medium",
     srcs = ["emnist_dataset_test.py"],
     python_version = "PY3",
     srcs_version = "PY3",
-    tags = [
-        "manual",
-        "nokokoro",
-        "nopresubmit",
-    ],
     deps = [":emnist_dataset"],
-)
-
-py_library(
-    name = "emnist_ae_dataset",
-    srcs = ["emnist_ae_dataset.py"],
-    srcs_version = "PY3",
-)
-
-py_test(
-    name = "emnist_ae_dataset_test",
-    srcs = ["emnist_ae_dataset_test.py"],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    tags = [
-        "manual",
-        "nokokoro",
-        "nopresubmit",
-    ],
-    deps = [":emnist_ae_dataset"],
 )
 
 py_library(
@@ -69,48 +62,39 @@ py_library(
 
 py_test(
     name = "shakespeare_dataset_test",
+    size = "medium",
     srcs = ["shakespeare_dataset_test.py"],
     python_version = "PY3",
     srcs_version = "PY3",
-    tags = [
-        "manual",
-        "nokokoro",
-        "nopresubmit",
-    ],
     deps = [":shakespeare_dataset"],
 )
 
 py_library(
-    name = "stackoverflow_dataset",
-    srcs = ["stackoverflow_dataset.py"],
+    name = "stackoverflow_word_prediction",
+    srcs = ["stackoverflow_word_prediction.py"],
     srcs_version = "PY3",
 )
 
 py_test(
-    name = "stackoverflow_dataset_test",
+    name = "stackoverflow_word_prediction_test",
     size = "medium",
-    srcs = ["stackoverflow_dataset_test.py"],
+    srcs = ["stackoverflow_word_prediction_test.py"],
     python_version = "PY3",
     srcs_version = "PY3",
-    deps = [":stackoverflow_dataset"],
+    deps = [":stackoverflow_word_prediction"],
 )
 
 py_library(
-    name = "stackoverflow_lr_dataset",
-    srcs = ["stackoverflow_lr_dataset.py"],
+    name = "stackoverflow_tag_prediction",
+    srcs = ["stackoverflow_tag_prediction.py"],
     srcs_version = "PY3",
 )
 
 py_test(
-    name = "stackoverflow_lr_dataset_test",
-    size = "large",
-    srcs = ["stackoverflow_lr_dataset_test.py"],
+    name = "stackoverflow_tag_prediction_test",
+    size = "medium",
+    srcs = ["stackoverflow_tag_prediction_test.py"],
     python_version = "PY3",
     srcs_version = "PY3",
-    tags = [
-        "manual",
-        "nokokoro",
-        "notap",
-    ],
-    deps = [":stackoverflow_lr_dataset"],
+    deps = [":stackoverflow_tag_prediction"],
 )

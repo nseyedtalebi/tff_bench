@@ -12,75 +12,147 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import collections
+from unittest import mock
+
 import tensorflow as tf
+import tensorflow_federated as tff
 
 from utils.datasets import emnist_dataset
 
-TEST_BATCH_SIZE = emnist_dataset.TEST_BATCH_SIZE
+NUM_ONLY_DIGITS_CLIENTS = 3383
+TOTAL_NUM_CLIENTS = 3400
 
 
-def _compute_length_of_dataset(ds):
-  return ds.reduce(0, lambda x, _: x + 1)
+TEST_DATA = collections.OrderedDict(
+    label=([tf.constant(0, dtype=tf.int32)]),
+    pixels=([tf.zeros((28, 28), dtype=tf.float32)]),
+)
 
 
-class DatasetTest(tf.test.TestCase):
+class DigitRecognitionPreprocessFnTest(tf.test.TestCase):
 
-  def test_emnist_dataset_structure(self):
-    emnist_train, emnist_test = emnist_dataset.get_emnist_datasets(
-        client_batch_size=10, client_epochs_per_round=1, only_digits=True)
-    self.assertEqual(len(emnist_train.client_ids), 3383)
-    sample_train_ds = emnist_train.create_tf_dataset_for_client(
-        emnist_train.client_ids[0])
+  def test_preprocess_element_spec(self):
+    ds = tf.data.Dataset.from_tensor_slices(TEST_DATA)
+    preprocess_fn = emnist_dataset.create_preprocess_fn(
+        num_epochs=1,
+        batch_size=20,
+        shuffle_buffer_size=1,
+        emnist_task='digit_recognition')
+    preprocessed_ds = preprocess_fn(ds)
+    self.assertEqual(preprocessed_ds.element_spec,
+                     (tf.TensorSpec(shape=(None, 28, 28, 1), dtype=tf.float32),
+                      tf.TensorSpec(shape=(None,), dtype=tf.int32)))
 
-    train_batch = next(iter(sample_train_ds))
-    train_batch_shape = train_batch[0].shape
-    test_batch = next(iter(emnist_test))
-    test_batch_shape = test_batch[0].shape
-    self.assertEqual(train_batch_shape.as_list(), [10, 28, 28, 1])
-    self.assertEqual(test_batch_shape.as_list(), [TEST_BATCH_SIZE, 28, 28, 1])
+  def test_preprocess_returns_correct_element(self):
+    ds = tf.data.Dataset.from_tensor_slices(TEST_DATA)
+    preprocess_fn = emnist_dataset.create_preprocess_fn(
+        num_epochs=1,
+        batch_size=20,
+        shuffle_buffer_size=1,
+        emnist_task='digit_recognition')
+    preprocessed_ds = preprocess_fn(ds)
 
-  def test_take_without_repeat(self):
-    emnist_train, _ = emnist_dataset.get_emnist_datasets(
-        client_batch_size=10,
-        client_epochs_per_round=1,
-        max_batches_per_client=10,
-        only_digits=True)
-    self.assertEqual(len(emnist_train.client_ids), 3383)
-    for i in range(10):
-      client_ds = emnist_train.create_tf_dataset_for_client(
-          emnist_train.client_ids[i])
-      self.assertLessEqual(_compute_length_of_dataset(client_ds), 10)
+    element = next(iter(preprocessed_ds))
+    expected_element = (tf.zeros(shape=(1, 28, 28, 1), dtype=tf.float32),
+                        tf.zeros(shape=(1,), dtype=tf.int32))
+    self.assertAllClose(self.evaluate(element), expected_element)
 
-  def test_take_with_repeat(self):
-    emnist_train, _ = emnist_dataset.get_emnist_datasets(
-        client_batch_size=10,
-        client_epochs_per_round=-1,
-        max_batches_per_client=10,
-        only_digits=True)
-    self.assertEqual(len(emnist_train.client_ids), 3383)
-    for i in range(10):
-      client_ds = emnist_train.create_tf_dataset_for_client(
-          emnist_train.client_ids[i])
-      self.assertEqual(_compute_length_of_dataset(client_ds), 10)
 
-  def test_raises_no_repeat_and_no_take(self):
-    with self.assertRaisesRegex(
-        ValueError, 'Argument client_epochs_per_round is set to -1'):
-      emnist_dataset.get_emnist_datasets(
-          client_batch_size=10,
-          client_epochs_per_round=-1,
-          max_batches_per_client=-1)
+class AutoencoderPreprocessFnTest(tf.test.TestCase):
 
-  def test_global_emnist_dataset_structure(self):
-    global_train, global_test = emnist_dataset.get_centralized_datasets(
-        train_batch_size=32, test_batch_size=100, only_digits=False)
+  def test_preprocess_element_spec(self):
+    ds = tf.data.Dataset.from_tensor_slices(TEST_DATA)
+    preprocess_fn = emnist_dataset.create_preprocess_fn(
+        num_epochs=1,
+        batch_size=20,
+        shuffle_buffer_size=1,
+        emnist_task='autoencoder')
+    preprocessed_ds = preprocess_fn(ds)
+    self.assertEqual(preprocessed_ds.element_spec,
+                     (tf.TensorSpec(shape=(None, 784), dtype=tf.float32),
+                      tf.TensorSpec(shape=(None, 784), dtype=tf.float32)))
 
-    train_batch = next(iter(global_train))
-    train_batch_shape = train_batch[0].shape
-    test_batch = next(iter(global_test))
-    test_batch_shape = test_batch[0].shape
-    self.assertEqual(train_batch_shape.as_list(), [32, 28, 28, 1])
-    self.assertEqual(test_batch_shape.as_list(), [100, 28, 28, 1])
+  def test_preprocess_returns_correct_element(self):
+    ds = tf.data.Dataset.from_tensor_slices(TEST_DATA)
+    preprocess_fn = emnist_dataset.create_preprocess_fn(
+        num_epochs=1,
+        batch_size=20,
+        shuffle_buffer_size=1,
+        emnist_task='autoencoder')
+    preprocessed_ds = preprocess_fn(ds)
+    self.assertEqual(preprocessed_ds.element_spec,
+                     (tf.TensorSpec(shape=(None, 784), dtype=tf.float32),
+                      tf.TensorSpec(shape=(None, 784), dtype=tf.float32)))
+
+    element = next(iter(preprocessed_ds))
+    expected_element = (tf.ones(shape=(1, 784), dtype=tf.float32),
+                        tf.ones(shape=(1, 784), dtype=tf.float32))
+    self.assertAllClose(self.evaluate(element), expected_element)
+
+
+EMNIST_LOAD_DATA = 'tensorflow_federated.simulation.datasets.emnist.load_data'
+
+
+class FederatedDatasetTest(tf.test.TestCase):
+
+  @mock.patch(EMNIST_LOAD_DATA)
+  def test_preprocess_applied(self, mock_load_data):
+    if tf.config.list_logical_devices('GPU'):
+      self.skipTest('skip GPU test')
+    # Mock out the actual data loading from disk. Assert that the preprocessing
+    # function is applied to the client data, and that only the ClientData
+    # objects we desired are used.
+    #
+    # The correctness of the preprocessing function is tested in other tests.
+    mock_train = mock.create_autospec(tff.simulation.datasets.ClientData)
+    mock_test = mock.create_autospec(tff.simulation.datasets.ClientData)
+    mock_load_data.return_value = (mock_train, mock_test)
+
+    _, _ = emnist_dataset.get_federated_datasets()
+
+    mock_load_data.assert_called_once()
+
+    # Assert the training and testing data are preprocessed.
+    self.assertEqual(mock_train.mock_calls,
+                     mock.call.preprocess(mock.ANY).call_list())
+    self.assertEqual(mock_test.mock_calls,
+                     mock.call.preprocess(mock.ANY).call_list())
+
+
+class CentralizedDatasetTest(tf.test.TestCase):
+
+  @mock.patch(EMNIST_LOAD_DATA)
+  def test_preprocess_applied(self, mock_load_data):
+    if tf.config.list_logical_devices('GPU'):
+      self.skipTest('skip GPU test')
+    # Mock out the actual data loading from disk. Assert that the preprocessing
+    # function is applied to the client data, and that only the ClientData
+    # objects we desired are used.
+    #
+    # The correctness of the preprocessing function is tested in other tests.
+    sample_ds = tf.data.Dataset.from_tensor_slices(TEST_DATA)
+
+    mock_train = mock.create_autospec(tff.simulation.datasets.ClientData)
+    mock_train.create_tf_dataset_from_all_clients = mock.Mock(
+        return_value=sample_ds)
+
+    mock_test = mock.create_autospec(tff.simulation.datasets.ClientData)
+    mock_test.create_tf_dataset_from_all_clients = mock.Mock(
+        return_value=sample_ds)
+
+    mock_load_data.return_value = (mock_train, mock_test)
+
+    _, _ = emnist_dataset.get_centralized_datasets()
+
+    mock_load_data.assert_called_once()
+
+    # Assert the validation ClientData isn't used, and the train and test
+    # are amalgamated into datasets single datasets over all clients.
+    self.assertEqual(mock_train.mock_calls,
+                     mock.call.create_tf_dataset_from_all_clients().call_list())
+    self.assertEqual(mock_test.mock_calls,
+                     mock.call.create_tf_dataset_from_all_clients().call_list())
 
 
 if __name__ == '__main__':

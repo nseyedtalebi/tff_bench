@@ -37,20 +37,6 @@ py_test(
 )
 
 py_library(
-    name = "checkpoint_manager",
-    srcs = ["checkpoint_manager.py"],
-    srcs_version = "PY3",
-)
-
-py_test(
-    name = "checkpoint_manager_test",
-    srcs = ["checkpoint_manager_test.py"],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    deps = [":checkpoint_manager"],
-)
-
-py_library(
     name = "checkpoint_utils",
     srcs = ["checkpoint_utils.py"],
     srcs_version = "PY3",
@@ -66,28 +52,9 @@ py_test(
 )
 
 py_library(
-    name = "metrics_manager",
-    srcs = ["metrics_manager.py"],
-    srcs_version = "PY3",
-)
-
-py_test(
-    name = "metrics_manager_test",
-    srcs = ["metrics_manager_test.py"],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    deps = [":metrics_manager"],
-)
-
-py_library(
     name = "training_loop",
     srcs = ["training_loop.py"],
     srcs_version = "PY3",
-    deps = [
-        ":checkpoint_manager",
-        ":metrics_manager",
-        ":utils_impl",
-    ],
 )
 
 py_test(
@@ -96,31 +63,18 @@ py_test(
     srcs = ["training_loop_test.py"],
     python_version = "PY3",
     srcs_version = "PY3",
-    deps = [
-        ":checkpoint_manager",
-        ":metrics_manager",
-        ":training_loop",
-    ],
-)
-
-py_library(
-    name = "training_utils",
-    srcs = ["training_utils.py"],
-    srcs_version = "PY3",
-)
-
-py_test(
-    name = "training_utils_test",
-    size = "large",
-    srcs = ["training_utils_test.py"],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    deps = [":training_utils"],
+    deps = [":training_loop"],
 )
 
 py_library(
     name = "utils_impl",
     srcs = ["utils_impl.py"],
+    srcs_version = "PY3",
+)
+
+py_library(
+    name = "tensor_utils",
+    srcs = ["tensor_utils.py"],
     srcs_version = "PY3",
 )
 
@@ -130,4 +84,12 @@ py_test(
     python_version = "PY3",
     srcs_version = "PY3",
     deps = [":utils_impl"],
+)
+
+py_test(
+    name = "tensor_utils_test",
+    srcs = ["tensor_utils_test.py"],
+    python_version = "PY3",
+    srcs_version = "PY3",
+    deps = [":tensor_utils"],
 )

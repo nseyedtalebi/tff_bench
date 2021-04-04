@@ -10,7 +10,7 @@ py_library(
     srcs_version = "PY3",
     deps = [
         "//utils:centralized_training_loop",
-        "//utils/datasets:stackoverflow_lr_dataset",
+        "//utils/datasets:stackoverflow_tag_prediction",
         "//utils/models:stackoverflow_lr_models",
     ],
 )
@@ -20,9 +20,8 @@ py_library(
     srcs = ["federated_stackoverflow_lr.py"],
     srcs_version = "PY3",
     deps = [
-        "//utils:training_loop",
-        "//utils:training_utils",
-        "//utils/datasets:stackoverflow_lr_dataset",
+        "//optimization/shared:training_specs",
+        "//utils/datasets:stackoverflow_tag_prediction",
         "//utils/models:stackoverflow_lr_models",
     ],
 )

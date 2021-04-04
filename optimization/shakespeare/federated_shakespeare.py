@@ -14,15 +14,12 @@
 """Federated Shakespeare next character prediction library using TFF."""
 
 import functools
-from typing import Callable, Optional
 
-from absl import logging
 import tensorflow as tf
 import tensorflow_federated as tff
 
 from optimization.shared import keras_metrics
-from utils import training_loop
-from utils import training_utils
+from optimization.shared import training_specs
 from utils.datasets import shakespeare_dataset
 from utils.models import shakespeare_models
 
@@ -49,90 +46,47 @@ def metrics_builder():
   ]
 
 
-def run_federated(
-    iterative_process_builder: Callable[..., tff.templates.IterativeProcess],
-    client_epochs_per_round: int,
-    client_batch_size: int,
-    clients_per_round: int,
-    max_batches_per_client: Optional[int] = -1,
-    client_datasets_random_seed: Optional[int] = None,
-    sequence_length: Optional[int] = 80,
-    total_rounds: Optional[int] = 1500,
-    experiment_name: Optional[str] = 'federated_shakespeare',
-    root_output_dir: Optional[str] = '/tmp/fed_opt',
-    max_eval_batches: Optional[int] = None,
-    **kwargs):
-  """Runs an iterative process on a Shakespeare next character prediction task.
+def eval_metrics_builder():
+  pad_token, _, _, _ = shakespeare_dataset.get_special_tokens()
 
-  This method will load and pre-process dataset and construct a model used for
+  return [
+      tf.keras.metrics.SparseCategoricalCrossentropy(),
+      keras_metrics.MaskedCategoricalAccuracy(masked_tokens=[pad_token]),
+  ]
+
+
+def configure_training(task_spec: training_specs.TaskSpec,
+                       sequence_length: int = 80) -> training_specs.RunnerSpec:
+  """Configures training for the Shakespeare next-character prediction task.
+
+  This method will load and pre-process datasets and construct a model used for
   the task. It then uses `iterative_process_builder` to create an iterative
-  process that it applies to the task, using
-  `federated_research.utils.training_loop`.
-
-  We assume that the iterative process has the following functional type
-  signatures:
-
-    *   `initialize`: `( -> S@SERVER)` where `S` represents the server state.
-    *   `next`: `<S@SERVER, {B*}@CLIENTS> -> <S@SERVER, T@SERVER>` where `S`
-        represents the server state, `{B*}` represents the client datasets,
-        and `T` represents a python `Mapping` object.
-
-  Moreover, the server state must have an attribute `model` of type
-  `tff.learning.ModelWeights`.
+  process compatible with `federated_research.utils.training_loop`.
 
   Args:
-    iterative_process_builder: A function that accepts a no-arg `model_fn`, and
-      a `client_weight_fn`, and returns a `tff.templates.IterativeProcess`. The
-      `model_fn` must return a `tff.learning.Model`.
-    client_epochs_per_round: An integer representing the number of epochs of
-      training performed per client in each training round.
-    client_batch_size: An integer representing the batch size used on clients.
-    clients_per_round: An integer representing the number of clients
-      participating in each round.
-    max_batches_per_client: An optional int specifying the number of batches
-      taken by each client at each round. If `-1`, the entire client dataset is
-      used.
-    client_datasets_random_seed: An optional int used to seed which clients are
-      sampled at each round. If `None`, no seed is used.
+    task_spec: A `TaskSpec` class for creating federated training tasks.
     sequence_length: An int specifying the length of the character sequences
       used for prediction.
-    total_rounds: The number of federated training rounds.
-    experiment_name: The name of the experiment being run. This will be appended
-      to the `root_output_dir` for purposes of writing outputs.
-    root_output_dir: The name of the root output directory for writing
-      experiment outputs.
-    max_eval_batches: If set to a positive integer, evaluation datasets are
-      capped to at most that many batches. If set to None or a nonpositive
-      integer, the full evaluation datasets are used.
-    **kwargs: Additional arguments configuring the training loop. For details
-      on supported arguments, see
-      `federated_research/utils/training_utils.py`.
+
+  Returns:
+    A `RunnerSpec` containing attributes used for running the newly created
+    federated task.
   """
 
-  train_clientdata = shakespeare_dataset.construct_character_level_datasets(
-      client_batch_size=client_batch_size,
-      client_epochs_per_round=client_epochs_per_round,
-      sequence_length=sequence_length,
-      max_batches_per_client=max_batches_per_client)
-
-  _, test_dataset = shakespeare_dataset.get_centralized_datasets(
-      train_batch_size=client_batch_size,
-      max_test_batches=max_eval_batches,
+  shakespeare_train, _ = tff.simulation.datasets.shakespeare.load_data()
+  _, shakespeare_test = shakespeare_dataset.get_centralized_datasets(
       sequence_length=sequence_length)
+
+  train_preprocess_fn = shakespeare_dataset.create_preprocess_fn(
+      num_epochs=task_spec.client_epochs_per_round,
+      batch_size=task_spec.client_batch_size,
+      sequence_length=sequence_length)
+  input_spec = train_preprocess_fn.type_signature.result.element
 
   model_builder = functools.partial(
       create_shakespeare_model, sequence_length=sequence_length)
-
   loss_builder = functools.partial(
       tf.keras.losses.SparseCategoricalCrossentropy, from_logits=True)
-
-  input_spec = train_clientdata.create_tf_dataset_for_client(
-      train_clientdata.client_ids[0]).element_spec
-
-  def client_weight_fn(local_outputs):
-    # Num_tokens is a tensor with type int64[1], to use as a weight need
-    # a float32 scalar.
-    return tf.cast(tf.squeeze(local_outputs['num_tokens']), tf.float32)
 
   def tff_model_fn() -> tff.learning.Model:
     return tff.learning.from_keras_model(
@@ -141,29 +95,39 @@ def run_federated(
         loss=loss_builder(),
         metrics=metrics_builder())
 
-  training_process = iterative_process_builder(
-      tff_model_fn, client_weight_fn=client_weight_fn)
+  iterative_process = task_spec.iterative_process_builder(tff_model_fn)
 
-  client_datasets_fn = training_utils.build_client_datasets_fn(
-      dataset=train_clientdata,
-      clients_per_round=clients_per_round,
-      random_seed=client_datasets_random_seed)
+  @tff.tf_computation(tf.string)
+  def build_train_dataset_from_client_id(client_id):
+    client_dataset = shakespeare_train.dataset_computation(client_id)
+    return train_preprocess_fn(client_dataset)
 
-  evaluate_fn = training_utils.build_centralized_evaluate_fn(
-      eval_dataset=test_dataset,
-      model_builder=model_builder,
-      loss_builder=loss_builder,
-      metrics_builder=metrics_builder)
+  training_process = tff.simulation.compose_dataset_computation_with_iterative_process(
+      build_train_dataset_from_client_id, iterative_process)
+  client_ids_fn = tff.simulation.build_uniform_sampling_fn(
+      shakespeare_train.client_ids,
+      size=task_spec.clients_per_round,
+      replace=False,
+      random_seed=task_spec.client_datasets_random_seed)
+  # We convert the output to a list (instead of an np.ndarray) so that it can
+  # be used as input to the iterative process.
+  client_sampling_fn = lambda x: list(client_ids_fn(x))
 
-  logging.info('Training model:')
-  logging.info(model_builder().summary())
+  training_process.get_model_weights = iterative_process.get_model_weights
 
-  training_loop.run(
+  evaluate_fn = tff.learning.build_federated_evaluation(tff_model_fn)
+
+  def test_fn(state):
+    return evaluate_fn(
+        iterative_process.get_model_weights(state), [shakespeare_test])
+
+  def validation_fn(state, round_num):
+    del round_num
+    return evaluate_fn(
+        iterative_process.get_model_weights(state), [shakespeare_test])
+
+  return training_specs.RunnerSpec(
       iterative_process=training_process,
-      client_datasets_fn=client_datasets_fn,
-      validation_fn=evaluate_fn,
-      test_fn=evaluate_fn,
-      total_rounds=total_rounds,
-      experiment_name=experiment_name,
-      root_output_dir=root_output_dir,
-      **kwargs)
+      client_datasets_fn=client_sampling_fn,
+      validation_fn=validation_fn,
+      test_fn=test_fn)

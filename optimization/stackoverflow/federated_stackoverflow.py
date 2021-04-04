@@ -14,73 +14,35 @@
 """Federated Stack Overflow next word prediction library using TFF."""
 
 import functools
-from typing import Callable, Optional
-
-from absl import logging
 
 import tensorflow as tf
 import tensorflow_federated as tff
 
 from optimization.shared import keras_metrics
-from utils import training_loop
-from utils import training_utils
-from utils.datasets import stackoverflow_dataset
+from optimization.shared import training_specs
+from utils.datasets import stackoverflow_word_prediction
 from utils.models import stackoverflow_models
 
 
-def run_federated(
-    iterative_process_builder: Callable[..., tff.templates.IterativeProcess],
-    client_epochs_per_round: int,
-    client_batch_size: int,
-    clients_per_round: int,
-    max_batches_per_client: Optional[int] = -1,
-    client_datasets_random_seed: Optional[int] = None,
-    vocab_size: Optional[int] = 10000,
-    num_oov_buckets: Optional[int] = 1,
-    sequence_length: Optional[int] = 20,
-    max_elements_per_user: Optional[int] = 1000,
-    num_validation_examples: Optional[int] = 10000,
-    embedding_size: Optional[int] = 96,
-    latent_size: Optional[int] = 670,
-    num_layers: Optional[int] = 1,
-    shared_embedding: Optional[bool] = False,
-    total_rounds: Optional[int] = 1500,
-    experiment_name: Optional[str] = 'federated_so_nwp',
-    root_output_dir: Optional[str] = '/tmp/fed_opt',
-    max_eval_batches: Optional[int] = None,
-    **kwargs):
-  """Runs an iterative process on the Stack Overflow next word prediction task.
+def configure_training(
+    task_spec: training_specs.TaskSpec,
+    vocab_size: int = 10000,
+    num_oov_buckets: int = 1,
+    sequence_length: int = 20,
+    max_elements_per_user: int = 1000,
+    num_validation_examples: int = 10000,
+    embedding_size: int = 96,
+    latent_size: int = 670,
+    num_layers: int = 1,
+    shared_embedding: bool = False) -> training_specs.RunnerSpec:
+  """Configures training for Stack Overflow next-word prediction.
 
-  This method will load and pre-process dataset and construct a model used for
+  This method will load and pre-process datasets and construct a model used for
   the task. It then uses `iterative_process_builder` to create an iterative
-  process that it applies to the task, using
-  `federated_research.utils.training_loop`.
-
-  We assume that the iterative process has the following functional type
-  signatures:
-
-    *   `initialize`: `( -> S@SERVER)` where `S` represents the server state.
-    *   `next`: `<S@SERVER, {B*}@CLIENTS> -> <S@SERVER, T@SERVER>` where `S`
-        represents the server state, `{B*}` represents the client datasets,
-        and `T` represents a python `Mapping` object.
-
-  Moreover, the server state must have an attribute `model` of type
-  `tff.learning.ModelWeights`.
+  process compatible with `federated_research.utils.training_loop`.
 
   Args:
-    iterative_process_builder: A function that accepts a no-arg `model_fn`, a
-      `client_weight_fn` and returns a `tff.templates.IterativeProcess`. The
-      `model_fn` must return a `tff.learning.Model`.
-    client_epochs_per_round: An integer representing the number of epochs of
-      training performed per client in each training round.
-    client_batch_size: An integer representing the batch size used on clients.
-    clients_per_round: An integer representing the number of clients
-      participating in each round.
-    max_batches_per_client: An optional int specifying the number of batches
-      taken by each client at each round. If `-1`, the entire client dataset is
-      used.
-    client_datasets_random_seed: An optional int used to seed which clients are
-      sampled at each round. If `None`, no seed is used.
+    task_spec: A `TaskSpec` class for creating federated training tasks.
     vocab_size: Integer dictating the number of most frequent words to use in
       the vocabulary.
     num_oov_buckets: The number of out-of-vocabulary buckets to use.
@@ -93,17 +55,10 @@ def run_federated(
     num_layers: The number of stacked recurrent layers to use.
     shared_embedding: Boolean indicating whether to tie input and output
       embeddings.
-    total_rounds: The number of federated training rounds.
-    experiment_name: The name of the experiment being run. This will be appended
-      to the `root_output_dir` for purposes of writing outputs.
-    root_output_dir: The name of the root output directory for writing
-      experiment outputs.
-    max_eval_batches: If set to a positive integer, evaluation datasets are
-      capped to at most that many batches. If set to None or a nonpositive
-      integer, the full evaluation datasets are used.
-    **kwargs: Additional arguments configuring the training loop. For details
-      on supported arguments, see
-      `federated_research/utils/training_utils.py`.
+
+  Returns:
+    A `RunnerSpec` containing attributes used for running the newly created
+    federated task.
   """
 
   model_builder = functools.partial(
@@ -118,7 +73,7 @@ def run_federated(
   loss_builder = functools.partial(
       tf.keras.losses.SparseCategoricalCrossentropy, from_logits=True)
 
-  special_tokens = stackoverflow_dataset.get_special_tokens(
+  special_tokens = stackoverflow_word_prediction.get_special_tokens(
       vocab_size, num_oov_buckets)
   pad_token = special_tokens.pad
   oov_tokens = special_tokens.oov
@@ -144,23 +99,19 @@ def run_federated(
   # `tff.learning.build_federated_evaluation` to get metrics over client
   # distributions, as well as the example weight means from this centralized
   # evaluation.
-  _, validation_dataset, test_dataset = stackoverflow_dataset.get_centralized_datasets(
+  _, validation_dataset, test_dataset = stackoverflow_word_prediction.get_centralized_datasets(
       vocab_size=vocab_size,
-      max_seq_len=sequence_length,
-      train_batch_size=client_batch_size,
-      max_validation_batches=max_eval_batches,
-      max_test_batches=max_eval_batches,
+      max_sequence_length=sequence_length,
       num_validation_examples=num_validation_examples,
       num_oov_buckets=num_oov_buckets)
 
-  train_dataset_preprocess_comp = stackoverflow_dataset.create_train_dataset_preprocess_fn(
-      vocab=stackoverflow_dataset.create_vocab(vocab_size),
+  train_dataset_preprocess_comp = stackoverflow_word_prediction.create_preprocess_fn(
+      vocab=stackoverflow_word_prediction.create_vocab(vocab_size),
       num_oov_buckets=num_oov_buckets,
-      client_batch_size=client_batch_size,
-      client_epochs_per_round=client_epochs_per_round,
-      max_seq_len=sequence_length,
-      max_training_elements_per_user=max_elements_per_user,
-      max_batches_per_user=max_batches_per_client)
+      client_batch_size=task_spec.client_batch_size,
+      client_epochs_per_round=task_spec.client_epochs_per_round,
+      max_sequence_length=sequence_length,
+      max_elements_per_client=max_elements_per_user)
 
   input_spec = train_dataset_preprocess_comp.type_signature.result.element
 
@@ -171,45 +122,40 @@ def run_federated(
         loss=loss_builder(),
         metrics=metrics_builder())
 
-  def client_weight_fn(local_outputs):
-    # Num_tokens is a tensor with type int64[1], to use as a weight need
-    # a float32 scalar.
-    return tf.cast(tf.squeeze(local_outputs['num_tokens']), tf.float32)
+  iterative_process = task_spec.iterative_process_builder(tff_model_fn)
 
-  training_process = iterative_process_builder(
-      tff_model_fn, client_weight_fn=client_weight_fn)
+  @tff.tf_computation(tf.string)
+  def train_dataset_computation(client_id):
+    client_train_data = train_clientdata.dataset_computation(client_id)
+    return train_dataset_preprocess_comp(client_train_data)
 
   training_process = tff.simulation.compose_dataset_computation_with_iterative_process(
-      train_dataset_preprocess_comp, training_process)
+      train_dataset_computation, iterative_process)
+  client_ids_fn = tff.simulation.build_uniform_sampling_fn(
+      train_clientdata.client_ids,
+      size=task_spec.clients_per_round,
+      replace=False,
+      random_seed=task_spec.client_datasets_random_seed)
+  # We convert the output to a list (instead of an np.ndarray) so that it can
+  # be used as input to the iterative process.
+  client_sampling_fn = lambda x: list(client_ids_fn(x))
 
-  client_datasets_fn = training_utils.build_client_datasets_fn(
-      dataset=train_clientdata,
-      clients_per_round=clients_per_round,
-      random_seed=client_datasets_random_seed)
+  training_process.get_model_weights = iterative_process.get_model_weights
 
-  evaluate_fn = training_utils.build_centralized_evaluate_fn(
-      model_builder=model_builder,
-      eval_dataset=validation_dataset,
-      loss_builder=loss_builder,
-      metrics_builder=metrics_builder)
+  evaluate_fn = tff.learning.build_federated_evaluation(tff_model_fn)
 
-  test_fn = training_utils.build_centralized_evaluate_fn(
-      model_builder=model_builder,
-      # Use both val and test for symmetry with other experiments, which
-      # evaluate on the entire test set.
-      eval_dataset=validation_dataset.concatenate(test_dataset),
-      loss_builder=loss_builder,
-      metrics_builder=metrics_builder)
+  def validation_fn(state, round_num):
+    del round_num
+    return evaluate_fn(
+        iterative_process.get_model_weights(state), [validation_dataset])
 
-  logging.info('Training model:')
-  logging.info(model_builder().summary())
+  def test_fn(state):
+    return evaluate_fn(
+        iterative_process.get_model_weights(state),
+        [validation_dataset.concatenate(test_dataset)])
 
-  training_loop.run(
+  return training_specs.RunnerSpec(
       iterative_process=training_process,
-      client_datasets_fn=client_datasets_fn,
-      validation_fn=evaluate_fn,
-      test_fn=test_fn,
-      total_rounds=total_rounds,
-      experiment_name=experiment_name,
-      root_output_dir=root_output_dir,
-      **kwargs)
+      client_datasets_fn=client_sampling_fn,
+      validation_fn=validation_fn,
+      test_fn=test_fn)
