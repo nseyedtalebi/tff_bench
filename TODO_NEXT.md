@@ -1,0 +1,6 @@
+- Continue with the restructure until examples run
+- Pull models out of tasks, move to other loc, and add any needed abstraction to add models for benchmark
+- Move hparams from optimization experiments, others ('best' haparams for each combination?) to Bazel or otherwise make easily usable
+- See if tasks beyond the five included in the optimization dir will work with all of the other stuff
+- Check compatability of everything
+- How to add some way of tracking resource use?
