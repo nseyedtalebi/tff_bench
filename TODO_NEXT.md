@@ -4,3 +4,4 @@
 - See if tasks beyond the five included in the optimization dir will work with all of the other stuff
 - Check compatability of everything
 - How to add some way of tracking resource use?
+- Add tests back and make sure they pass, and add new tests as appropriate
